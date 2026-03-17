@@ -2,10 +2,16 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 
 from generator import BlogPostGenerator
-from openai_text import OpenAIComposerConfig, build_text_composer
+from openai_text import (
+    OpenAIComposerConfig,
+    OpenAIRequestError,
+    OpenAIUnavailableError,
+    build_text_composer,
+)
 from parser import ImageFolderParser
 from seo import BasicTextComposer, SEOKeywordGenerator
 
@@ -57,11 +63,22 @@ def build_parser() -> argparse.ArgumentParser:
         default="auto",
         help="Detail level for image analysis requests.",
     )
+    generate_parser.add_argument(
+        "--output",
+        default="blog_post.md",
+        help="Output markdown file path.",
+    )
 
     return parser
 
 
-def handle_generate(folder: str, mode: str, openai_model: str, image_detail: str) -> None:
+def handle_generate(
+    folder: str,
+    mode: str,
+    openai_model: str,
+    image_detail: str,
+    output: str,
+) -> None:
     folder_path = Path(folder).expanduser().resolve()
     parser = ImageFolderParser()
     document = parser.parse_folder(folder_path)
@@ -81,20 +98,36 @@ def handle_generate(folder: str, mode: str, openai_model: str, image_detail: str
     )
 
     markdown = generator.generate(document)
-    print(markdown)
+    output_path = Path(output).expanduser()
+    if not output_path.is_absolute():
+        output_path = Path.cwd() / output_path
+    output_path.write_text(markdown, encoding="utf-8")
+
+    print(f"Markdown saved to: {output_path}")
 
 
 def main() -> None:
     load_dotenv(Path(".env").resolve())
     args = build_parser().parse_args()
 
-    if args.command == "generate":
-        handle_generate(
-            folder=args.folder,
-            mode=args.mode,
-            openai_model=args.openai_model,
-            image_detail=args.image_detail,
-        )
+    try:
+        if args.command == "generate":
+            handle_generate(
+                folder=args.folder,
+                mode=args.mode,
+                openai_model=args.openai_model,
+                image_detail=args.image_detail,
+                output=args.output,
+            )
+    except OpenAIUnavailableError as exc:
+        print(f"OpenAI mode is unavailable: {exc}", file=sys.stderr)
+        sys.exit(2)
+    except OpenAIRequestError as exc:
+        print(f"OpenAI request failed: {exc}", file=sys.stderr)
+        sys.exit(2)
+    except (FileNotFoundError, NotADirectoryError, ValueError) as exc:
+        print(f"Input error: {exc}", file=sys.stderr)
+        sys.exit(2)
 
 
 if __name__ == "__main__":

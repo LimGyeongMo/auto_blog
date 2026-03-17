@@ -1,1 +1,10 @@
 .env
+__pycache__/
+*.pyc
+blog_post.md
+*.jpg
+*.jpeg
+*.png
+*.webp
+*.gif
+*.bmp

@@ -1,7 +1,40 @@
 # Auto Blog Generator
 
 이미지 폴더를 기반으로 네이버 블로그용 Markdown 초안을 자동 생성하는 Python CLI 프로젝트입니다.
-기본 템플릿 생성과 OpenAI 기반 이미지 분석 생성 둘 다 지원합니다.
+기본 템플릿 생성과 OpenAI 기반 이미지 분석 생성을 지원하며, 결과는 Markdown 파일로 저장됩니다.
+
+## 빠른 시작
+
+다른 PC나 다른 작업 환경에서도 아래 순서대로 바로 사용할 수 있습니다.
+
+1. 저장소를 클론합니다.
+2. Python 3.11+ 환경을 준비합니다.
+3. 의존성을 설치합니다.
+4. `images` 폴더에 이미지 파일을 넣습니다.
+5. 필요하면 `.env`를 설정합니다.
+6. 원하는 모드로 실행합니다.
+
+Windows:
+
+```bat
+git clone <repo-url>
+cd auto_blog
+python -m pip install -r requirements.txt
+copy .env.example .env
+python main.py generate --folder .\images --mode template
+```
+
+macOS/Linux:
+
+```bash
+git clone <repo-url>
+cd auto_blog
+python -m pip install -r requirements.txt
+cp .env.example .env
+python main.py generate --folder ./images --mode template
+```
+
+OpenAI 모드까지 사용하려면 `.env`의 `OPENAI_API_KEY`를 실제 값으로 채운 뒤 실행하면 됩니다.
 
 ## 프로젝트 목적
 
@@ -21,7 +54,7 @@
 5. 메인 번호별로 섹션을 구성합니다.
 6. SEO 키워드를 생성합니다.
 7. 선택한 모드에 따라 문구를 생성합니다.
-8. 제목, 도입부, 본문, 마무리를 조합해 Markdown 글을 출력합니다.
+8. 제목, 도입부, 본문, 마무리를 조합해 Markdown 파일로 저장합니다.
 
 ## 파일 구조
 
@@ -30,6 +63,8 @@
 - `generator.py`: Markdown 블로그 글 생성
 - `seo.py`: SEO 키워드 및 기본 문구 생성
 - `openai_text.py`: OpenAI 기반 이미지 분석 및 문구 생성
+- `requirements.txt`: 설치해야 할 Python 패키지 목록
+- `images/`: 사용자가 이미지 파일을 넣는 기본 폴더
 
 ## 지원 파일명 규칙
 
@@ -51,48 +86,24 @@
 
 즉, 문자열 정렬이 아니라 숫자 정렬 방식으로 처리합니다.
 
-## 실행 방법
+## 설치와 준비
 
-```bash
-python main.py generate --folder ./images
-```
+필수:
 
-OpenAI 기반 이미지 분석을 사용하려면:
+- Python 3.11 이상
+- `pip install -r requirements.txt`
 
-```bash
-python main.py generate --folder ./images --mode openai
-```
-
-기본 OpenAI 모델은 `gpt-5.4`이며, 필요하면 `--openai-model`로 변경할 수 있습니다.
-
-자동 모드:
-
-```bash
-python main.py generate --folder ./images --mode auto
-```
-
-- `template`: 규칙 기반 문구만 사용
-- `openai`: OpenAI API로 이미지 내용을 분석해 글 작성
-- `auto`: OpenAI 사용 가능하면 분석, 아니면 템플릿으로 자동 전환
-
-## OpenAI 사용 조건
-
-OpenAI 모드를 사용하려면 아래가 필요합니다.
+OpenAI 모드 사용 시 추가 필요:
 
 - `.env` 파일 또는 환경 변수 `OPENAI_API_KEY`
-- Python 패키지 `openai`
-
-예시:
-
-```bash
-pip install openai
-```
+- Python 패키지 `openai` (`requirements.txt`에 포함)
 
 `.env` 설정 방법:
 
 1. `.env.example` 파일을 복사해 `.env` 파일을 만듭니다.
 2. `.env`에 API 키를 넣습니다.
-3. `.env`는 `.gitignore`에 포함되어 있으므로 Git에 올라가지 않습니다.
+3. `.env`는 `.gitignore`에 포함되어 Git에 올라가지 않습니다.
+4. 실제 이미지 파일(`.jpg`, `.png` 등)도 `.gitignore`에 포함되어 Git에 올라가지 않습니다.
 
 예시:
 
@@ -101,15 +112,70 @@ OPENAI_API_KEY=your_openai_api_key_here
 OPENAI_MODEL=gpt-5.4
 ```
 
-그 다음 아래처럼 실행하면 됩니다.
+## 실행 방법
+
+템플릿 모드:
+
+```bash
+python main.py generate --folder ./images --mode template
+```
+
+자동 모드:
+
+```bash
+python main.py generate --folder ./images --mode auto
+```
+
+OpenAI 모드:
 
 ```bash
 python main.py generate --folder ./images --mode openai
 ```
 
+짧게 실행하려면 프로젝트 루트에서 아래처럼 입력하면 됩니다.
+
+Windows:
+
+```bat
+start_blogging.bat
+```
+
+`bash` 환경:
+
+```bash
+./start_blogging
+```
+
+기본값:
+
+- 이미지 폴더: `.\images`
+- CLI 기본 생성 모드: `auto`
+- 출력 파일: `blog_post.md`
+
+단축 실행 스크립트 `start_blogging`은 항상 `--mode openai`로 실행합니다. 따라서 `OPENAI_API_KEY` 또는 `.env` 설정이 없으면 실행되지 않습니다.
+CLI에서 `python main.py generate ...`를 직접 실행할 때만 기본 모드 `auto`가 적용됩니다.
+
+다른 이미지 폴더를 쓰려면 경로를 함께 넘길 수 있습니다.
+
+```bash
+start_blogging .\my_images
+```
+
+기본 OpenAI 모델은 `gpt-5.4`이며, 필요하면 `--openai-model`로 변경할 수 있습니다.
+
+출력 파일명을 바꾸려면:
+
+```bash
+python main.py generate --folder ./images --output my_post.md
+```
+
+- `template`: 규칙 기반 문구만 사용
+- `openai`: OpenAI API로 이미지 내용을 분석해 글 작성
+- `auto`: OpenAI 사용 가능하면 분석, 아니면 템플릿으로 자동 전환
+
 ## 출력 형식
 
-출력은 터미널에 Markdown 형태로 생성됩니다.
+출력은 기본적으로 `blog_post.md` 파일에 저장됩니다.
 
 예시:
 
@@ -142,7 +208,7 @@ python main.py generate --folder ./images --mode openai
 - 섹션 구조 생성
 - SEO 키워드 생성
 - OpenAI 기반 이미지 설명 생성
-- Markdown 글 출력
+- Markdown 글 저장
 
 미포함:
 
@@ -154,9 +220,19 @@ python main.py generate --folder ./images --mode openai
 
 추후 아래 기능으로 확장 가능합니다.
 
-- Markdown 파일 저장
 - 네이버 블로그 자동 작성 및 발행
 - 템플릿 기반 스타일 커스터마이징
+
+## 호환성 메모
+
+이전 버전 문서와 스크립트에는 `start_bloging` 오타가 포함되어 있었습니다.
+현재는 `start_blogging`이 기본 이름이며, 기존 `start_bloging`과 `start_bloging.bat`도 호환용으로 함께 유지됩니다.
+
+## 공유 시 주의사항
+
+- 저장소에는 이미지 파일이 포함되지 않습니다. 각 환경에서 `images` 폴더에 직접 넣어야 합니다.
+- `.env`는 포함되지 않습니다. 각 환경에서 따로 만들어야 합니다.
+- OpenAI API 결제 상태와 프로젝트 권한은 사용하는 계정마다 별도입니다.
 
 ## 유지보수 원칙
 

@@ -37,6 +37,10 @@ class OpenAIUnavailableError(RuntimeError):
     pass
 
 
+class OpenAIRequestError(RuntimeError):
+    pass
+
+
 def build_text_composer(
     mode: str,
     fallback: TextComposer,
@@ -242,11 +246,15 @@ class OpenAITextComposer(TextComposer):
             "model": self._config.model,
             "input": payload,
         }
-        response = self._client.responses.create(**request_kwargs)
+        try:
+            response = self._client.responses.create(**request_kwargs)
+        except Exception as exc:
+            raise OpenAIRequestError(self._describe_openai_error(exc)) from exc
+
         text = getattr(response, "output_text", "")
         if text:
             return text
-        raise RuntimeError("OpenAI response did not contain output text.")
+        raise OpenAIRequestError("OpenAI response did not contain output text.")
 
     def _create_multimodal_payload(
         self,
@@ -288,3 +296,23 @@ class OpenAITextComposer(TextComposer):
         mime_type = guess_type(image_path.name)[0] or "application/octet-stream"
         encoded = b64encode(image_path.read_bytes()).decode("ascii")
         return f"data:{mime_type};base64,{encoded}"
+
+    @staticmethod
+    def _describe_openai_error(exc: Exception) -> str:
+        error_code = getattr(exc, "code", None)
+        status_code = getattr(exc, "status_code", None)
+        message = str(exc).strip() or exc.__class__.__name__
+
+        if error_code == "insufficient_quota":
+            return (
+                "API quota is exhausted. Check your OpenAI plan and billing, "
+                "or run with '--mode template'."
+            )
+
+        if status_code == 429:
+            return "OpenAI request was rate-limited. Wait and try again, or run with '--mode template'."
+
+        if status_code in {401, 403}:
+            return "OpenAI authentication failed. Check OPENAI_API_KEY and project permissions."
+
+        return f"OpenAI API request failed: {message}"
