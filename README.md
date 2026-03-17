@@ -277,6 +277,21 @@ python main.py publish --folder ./images --mode auto --publish-now
 - OpenAI API 결제 상태와 프로젝트 권한은 사용하는 계정마다 별도입니다.
 - 네이버 블로그 자동 입력은 에디터 UI 변경에 따라 선택자 조정이 필요할 수 있습니다.
 
+## 현재 상태 메모
+
+- `generate`는 Markdown 초안을 파일로 저장합니다.
+- `publish`는 네이버 글쓰기 화면을 열어 제목, 문단, 이미지를 자동 입력합니다.
+- 기본 구현은 완료됐지만, 실제 네이버 에디터 DOM 기준 선택자 보정 테스트는 추가로 필요할 수 있습니다.
+- 이어서 볼 때 핵심 파일은 `README.md`, `main.py`, `naver_uploader.py` 입니다.
+
+## 다음 작업 체크리스트
+
+- 집 환경에서 `python main.py publish --folder ./images --mode template --user-data-dir .playwright-profile` 실행
+- 네이버 로그인 후 제목 입력, 본문 입력, 이미지 업로드가 정상 동작하는지 확인
+- 실패 시 `naver_uploader.py`의 제목 영역, 본문 에디터, 이미지 버튼 선택자 보정
+- 안정화 후 `start_blogging`을 `publish` 기준으로 바꿀지 결정
+- 필요하면 `--publish-now` 최종 발행 단계도 실사용 기준으로 검증
+
 ## 유지보수 원칙
 
 앞으로 로직 변경이나 기능 수정이 생기면 아래 내용을 함께 갱신합니다.
