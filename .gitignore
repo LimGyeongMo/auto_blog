@@ -2,6 +2,13 @@
 __pycache__/
 *.pyc
 blog_post.md
+onboarding_check.md
+quota_check.md
+renamed_check.md
+smoke.md
+test_output.md
+test_post.md
+verify_post.md
 *.jpg
 *.jpeg
 *.png
