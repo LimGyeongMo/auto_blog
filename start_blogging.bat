@@ -1,9 +1,5 @@
 @echo off
 setlocal
-
-set "FOLDER=%~1"
-if "%FOLDER%"=="" set "FOLDER=.\images"
-
-python main.py generate --folder "%FOLDER%" --mode openai --output blog_post.md
-
+set "SCRIPT_DIR=%~dp0"
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -File "%SCRIPT_DIR%start_blogging.ps1" %*
 endlocal

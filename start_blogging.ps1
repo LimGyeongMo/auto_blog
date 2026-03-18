@@ -1,0 +1,45 @@
+$ErrorActionPreference = "Stop"
+
+$scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+
+if ($args.Count -ge 1 -and $args[0]) {
+    $folder = $args[0]
+} else {
+    $folder = Join-Path $scriptDir "images"
+}
+
+$prompt = [string]::Concat(
+    [char]0xBE14,[char]0xB85C,[char]0xADF8,[char]0x20,
+    [char]0xCEE8,[char]0xC149,[char]0xC744,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0xD558,[char]0xC138,[char]0xC694,
+    [char]0x20,[char]0x28,
+    [char]0xC608,[char]0x3A,[char]0x20,
+    [char]0xAC10,[char]0xC131,[char]0x20,[char]0xD6C4,[char]0xAE30,
+    [char]0x2C,[char]0x20,
+    [char]0xC804,[char]0xBB38,[char]0x20,[char]0xB9AC,[char]0xBDF0,
+    [char]0x2C,[char]0x20,
+    [char]0xCE5C,[char]0xADFC,[char]0xD55C,[char]0x20,[char]0xC124,[char]0xBA85,
+    [char]0x29,[char]0x2E,[char]0x20,
+    [char]0xBE44,[char]0xC6CC,[char]0xB450,[char]0xBA74,[char]0x20,
+    [char]0xAE30,[char]0xBCF8,[char]0xAC12,[char]0xC73C,[char]0xB85C,[char]0x20,
+    [char]0xC9C4,[char]0xD589,[char]0xD569,[char]0xB2C8,[char]0xB2E4
+)
+$concept = Read-Host $prompt
+$blogPrompt = [string]::Concat(
+    [char]0xB124,[char]0xC774,[char]0xBC84,[char]0x20,
+    [char]0xBE14,[char]0xB85C,[char]0xADF8,[char]0x20,
+    [char]0xC544,[char]0xC774,[char]0xB514,[char]0xB97C,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0xD558,[char]0xC138,[char]0xC694,
+    [char]0x20,[char]0x28,
+    [char]0xC608,[char]0x3A,[char]0x20,
+    [char]0x6D,[char]0x79,[char]0x62,[char]0x6C,[char]0x6F,[char]0x67,[char]0x69,[char]0x64,
+    [char]0x29
+)
+$blogId = Read-Host $blogPrompt
+
+& python (Join-Path $scriptDir "main.py") publish `
+    --folder $folder `
+    --mode openai `
+    --concept $concept `
+    --blog-id $blogId `
+    --user-data-dir (Join-Path $scriptDir ".playwright-profile")

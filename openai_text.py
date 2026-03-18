@@ -16,6 +16,7 @@ from seo import SEOKeywords, TextComposer
 class OpenAIComposerConfig:
     model: str = "gpt-5.4"
     image_detail: str = "auto"
+    concept: str = ""
 
 
 @dataclass(frozen=True)
@@ -214,8 +215,10 @@ class OpenAITextComposer(TextComposer):
             '{"title":"", "intro":"", "sections":{"1":"", "2":""}, "closing":""} 입니다. '
             "조건: 제목/도입부/본문/마무리에 주요 키워드와 서브 키워드를 자연스럽게 포함하고, "
             "과도한 반복은 피하며, 도입부는 3~5문장, 마무리에는 요약과 CTA를 포함하세요. "
-            "본문 각 섹션 설명은 메인 번호당 1개 문단만 작성하세요.\n\n"
+            "본문 각 섹션 설명은 메인 번호당 1개 문단만 작성하세요. "
+            "사용자가 제공한 컨셉이 있으면 톤과 표현, 분위기에 반드시 반영하세요.\n\n"
             f"폴더명: {document.folder.name}\n"
+            f"작성 컨셉: {self._config.concept or '기본'}\n"
             f"주요 키워드: {keywords.primary}\n"
             f"서브 키워드: {', '.join(keywords.secondary)}\n"
             f"섹션 분석 데이터: {json.dumps(sections_data, ensure_ascii=False)}"

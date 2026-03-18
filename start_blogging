@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 if [[ $# -ge 1 ]]; then
   FOLDER="$1"
 else
-  FOLDER="./images"
+  FOLDER="$SCRIPT_DIR/images"
 fi
 
-python main.py generate --folder "$FOLDER" --mode openai --output blog_post.md
+read -r -p "Enter blog concept (example: cozy review, expert review, friendly guide). Leave blank for default: " CONCEPT
+
+python "$SCRIPT_DIR/main.py" publish --folder "$FOLDER" --mode openai --concept "$CONCEPT" --user-data-dir "$SCRIPT_DIR/.playwright-profile"

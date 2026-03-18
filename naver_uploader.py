@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import time
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +17,7 @@ class NaverPublishError(RuntimeError):
 class NaverPublishConfig:
     user_data_dir: Path
     publish_url: str = "https://blog.naver.com/PostWriteForm.naver"
+    blog_id: str = ""
     headless: bool = False
     publish: bool = False
     wait_timeout_ms: int = 120000
@@ -36,34 +39,41 @@ class NaverBlogPublisher:
             ) from exc
 
         self._config.user_data_dir.mkdir(parents=True, exist_ok=True)
+        print(f"프로필 경로 준비 완료: {self._config.user_data_dir}")
 
         with sync_playwright() as playwright:
             browser_type = playwright.chromium
+            print("브라우저 실행 중...")
             context = self._launch_context(browser_type)
             try:
                 page = context.pages[0] if context.pages else context.new_page()
-                page.goto(self._config.publish_url, wait_until="domcontentloaded")
+                print("네이버 글쓰기 화면으로 이동 중...")
+                page.goto(self._editor_url(), wait_until="domcontentloaded")
+                try:
+                    page.wait_for_load_state("networkidle", timeout=10000)
+                except Exception:
+                    pass
                 page.bring_to_front()
+                print("에디터 로딩 대기 중...")
                 self._wait_for_editor(page)
                 self._dismiss_optional_dialogs(page)
                 title_target = self._locate_title_target(page)
-                body_frame = self._locate_body_frame(page)
+                body_target = self._locate_body_target(page)
+                print("제목과 본문 입력 중...")
                 self._fill_title(title_target, post.title)
-                self._clear_body(body_frame)
-                self._append_paragraph(body_frame, post.keyword_line)
-                self._append_blank(body_frame)
-                self._append_text_block(body_frame, post.intro)
+                self._clear_body(page, body_target)
+                self._append_paragraph(page, body_target, post.keyword_line)
+                self._append_blank(page, body_target)
+                self._append_text_block(page, body_target, post.intro)
                 for section in post.sections:
-                    self._append_section(page, body_frame, section)
-                self._append_heading(body_frame, post.closing_heading.replace("## ", ""))
-                self._append_text_block(body_frame, post.closing)
+                    self._append_section(page, body_target, section)
+                self._append_heading(page, body_target, post.closing_heading.replace("## ", ""))
+                self._append_text_block(page, body_target, post.closing)
                 if self._config.publish:
+                    print("최종 발행 버튼 클릭 시도 중...")
                     self._publish(page)
                 else:
-                    input(
-                        "Draft has been populated in the editor. Review it in the browser, "
-                        "then press Enter to close automation..."
-                    )
+                    print("초안 입력 완료. 자동화를 종료합니다.")
             finally:
                 context.close()
 
@@ -80,20 +90,101 @@ class NaverBlogPublisher:
         except Exception:
             return browser_type.launch_persistent_context(**launch_kwargs)
 
-    def _wait_for_editor(self, page) -> None:
+    def _wait_for_editor(self, page):
         deadline = time.time() + (self._config.wait_timeout_ms / 1000)
+        prompted_for_login = False
         while time.time() < deadline:
             self._dismiss_optional_dialogs(page)
             try:
                 self._locate_title_target(page)
-                self._locate_body_frame(page)
+                self._locate_body_target(page)
                 return
             except NaverPublishError:
+                if not prompted_for_login and self._looks_like_login_or_home(page):
+                    prompted_for_login = True
+                    print(f"현재 페이지: {page.url}")
+                    input(
+                        "네이버 로그인 또는 블로그 개설이 필요해 보입니다. "
+                        "브라우저에서 로그인/이동을 완료한 뒤 Enter를 누르면 다시 시도합니다..."
+                    )
+                    try:
+                        page.goto(self._editor_url(), wait_until="domcontentloaded")
+                        page.bring_to_front()
+                    except Exception:
+                        pass
                 time.sleep(1)
 
-        raise NaverPublishError(
-            "Could not find the Naver editor. Log in to Naver and leave the post editor open."
+        debug_path = self._write_debug_snapshot(page)
+        detail = f"Could not find the Naver editor. Current page: {page.url}"
+        if debug_path is not None:
+            detail = f"{detail}. Debug saved to: {debug_path}"
+        raise NaverPublishError(detail)
+
+    @staticmethod
+    def _looks_like_login_or_home(page) -> bool:
+        url = page.url.lower()
+        return any(
+            token in url
+            for token in (
+                "nid.naver.com",
+                "login",
+                "myblog",
+                "blog.naver.com",
+            )
         )
+
+    def _editor_url(self) -> str:
+        if not self._config.blog_id:
+            return self._config.publish_url
+
+        parsed = urlsplit(self._config.publish_url)
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        query["blogId"] = self._config.blog_id
+        return urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, urlencode(query), parsed.fragment)
+        )
+
+    def _write_debug_snapshot(self, page) -> Path | None:
+        try:
+            debug_dir = Path.cwd() / "debug"
+            debug_dir.mkdir(parents=True, exist_ok=True)
+            timestamp = time.strftime("%Y%m%d_%H%M%S")
+            html_path = debug_dir / f"naver_editor_debug_{timestamp}.html"
+            json_path = debug_dir / f"naver_editor_debug_{timestamp}.json"
+
+            html_path.write_text(page.content(), encoding="utf-8")
+
+            frame_data = []
+            for frame in page.frames:
+                try:
+                    contenteditable_count = frame.locator("[contenteditable='true']").count()
+                except Exception:
+                    contenteditable_count = -1
+                frame_data.append(
+                    {
+                        "url": frame.url,
+                        "name": frame.name,
+                        "contenteditable_count": contenteditable_count,
+                    }
+                )
+
+            json_path.write_text(
+                json.dumps(
+                    {
+                        "page_url": page.url,
+                        "title": page.title(),
+                        "frames": frame_data,
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            print(f"디버그 HTML 저장: {html_path}")
+            print(f"디버그 JSON 저장: {json_path}")
+            return json_path
+        except Exception:
+            return None
 
     def _dismiss_optional_dialogs(self, page) -> None:
         candidates = [
@@ -113,6 +204,9 @@ class NaverBlogPublisher:
 
     def _locate_title_target(self, page):
         selectors = [
+            ".se-component.se-documentTitle .se-title-text",
+            ".se-component.se-documentTitle .se-text-paragraph",
+            ".se-component.se-documentTitle .__se_placeholder",
             "textarea[placeholder*='제목']",
             "input[placeholder*='제목']",
             "[contenteditable='true'][placeholder*='제목']",
@@ -143,18 +237,24 @@ class NaverBlogPublisher:
 
         raise NaverPublishError("Could not find the post title field.")
 
-    def _locate_body_frame(self, page):
-        deadline = time.time() + (self._config.wait_timeout_ms / 1000)
-        while time.time() < deadline:
-            for frame in page.frames:
-                try:
-                    locator = frame.locator("[contenteditable='true']").last
-                    if locator.is_visible(timeout=500):
-                        return frame
-                except Exception:
-                    continue
-            time.sleep(1)
-
+    def _locate_body_target(self, page):
+        selectors = [
+            ".se-component[data-a11y-title='본문'] .se-text-paragraph",
+            ".se-section-text .se-text-paragraph",
+            ".se-module-text .se-text-paragraph",
+            ".se-component[data-a11y-title='본문'] .__se-node",
+            "[contenteditable='true'][data-placeholder*='내용']",
+            "[contenteditable='true'][aria-label*='본문']",
+            "[contenteditable='true'][placeholder*='내용']",
+            "[contenteditable='true']",
+        ]
+        for selector in selectors:
+            try:
+                locator = page.locator(selector).first
+                if locator.is_visible(timeout=500):
+                    return locator
+            except Exception:
+                continue
         raise NaverPublishError("Could not find the post body editor.")
 
     @staticmethod
@@ -167,53 +267,56 @@ class NaverBlogPublisher:
         except Exception:
             pass
 
+        try:
+            title_target.press("Control+A")
+            title_target.press("Delete")
+        except Exception:
+            pass
+
         title_target.press("Control+A")
         title_target.press("Delete")
         title_target.type(title)
 
-    def _clear_body(self, frame) -> None:
-        editor = self._body_editor(frame)
-        editor.click()
-        editor.press("Control+A")
-        editor.press("Delete")
+    def _clear_body(self, page, body_target) -> None:
+        body_target.click()
+        page.keyboard.press("Control+A")
+        page.keyboard.press("Delete")
 
-    def _append_section(self, page, frame, section: SectionPost) -> None:
-        self._append_heading(frame, section.heading.replace("## ", ""))
-        self._append_text_block(frame, section.text)
+    def _append_section(self, page, body_target, section: SectionPost) -> None:
+        print(f"섹션 입력 중: {section.heading}")
+        self._append_heading(page, body_target, section.heading.replace("## ", ""))
+        self._append_text_block(page, body_target, section.text)
         for image in section.images:
-            self._upload_image(page, frame, image.file_path)
-        self._append_blank(frame)
+            self._upload_image(page, body_target, image.file_path)
+        self._append_blank(page, body_target)
 
-    def _append_heading(self, frame, heading: str) -> None:
-        editor = self._body_editor(frame)
-        editor.click()
-        self._insert_html(
-            frame,
-            f"<h2>{self._escape_html(heading)}</h2>",
-        )
+    def _append_heading(self, page, body_target, heading: str) -> None:
+        self._append_paragraph(page, body_target, heading)
 
-    def _append_text_block(self, frame, text: str) -> None:
+    def _append_text_block(self, page, body_target, text: str) -> None:
         for paragraph in [line.strip() for line in text.splitlines() if line.strip()]:
-            self._append_paragraph(frame, paragraph)
+            self._append_paragraph(page, body_target, paragraph)
 
-    def _append_paragraph(self, frame, text: str) -> None:
-        editor = self._body_editor(frame)
-        editor.click()
-        self._insert_html(frame, f"<p>{self._escape_html(text)}</p>")
+    def _append_paragraph(self, page, body_target, text: str) -> None:
+        body_target.click()
+        page.keyboard.type(text)
+        page.keyboard.press("Enter")
 
-    def _append_blank(self, frame) -> None:
-        editor = self._body_editor(frame)
-        editor.click()
-        self._insert_html(frame, "<p><br></p>")
+    def _append_blank(self, page, body_target) -> None:
+        body_target.click()
+        page.keyboard.press("Enter")
 
-    def _upload_image(self, page, frame, image_path: Path) -> None:
-        image_button = self._find_image_button(page, frame)
-        image_input = self._find_file_input(page, frame, image_button)
+    def _upload_image(self, page, body_target, image_path: Path) -> None:
+        print(f"이미지 업로드 중: {image_path.name}")
+        image_button = self._find_image_button(page, body_target)
+        image_input = self._find_file_input(page, body_target, image_button)
         image_input.set_input_files(str(image_path))
         time.sleep(self._config.upload_wait_seconds)
 
-    def _find_image_button(self, page, frame):
+    def _find_image_button(self, page, body_target):
         selectors = [
+            ".se-image-toolbar-button",
+            ".se-insert-menu-button-image",
             "button:has-text('사진')",
             "button:has-text('이미지')",
             "[role='button']:has-text('사진')",
@@ -222,9 +325,9 @@ class NaverBlogPublisher:
             "button[aria-label*='이미지']",
         ]
         for selector in selectors:
-            for container in (frame, page):
+            for candidate_container in (page,):
                 try:
-                    locator = container.locator(selector).first
+                    locator = candidate_container.locator(selector).first
                     if locator.is_visible(timeout=500):
                         return locator
                 except Exception:
@@ -232,10 +335,10 @@ class NaverBlogPublisher:
 
         raise NaverPublishError("Could not find the image upload button in the editor.")
 
-    def _find_file_input(self, page, frame, image_button):
-        for container in (frame, page):
+    def _find_file_input(self, page, body_target, image_button):
+        for candidate_container in (page,):
             try:
-                locator = container.locator("input[type='file']").first
+                locator = candidate_container.locator("input[type='file']").first
                 if locator.count() > 0:
                     return locator
             except Exception:
@@ -244,9 +347,9 @@ class NaverBlogPublisher:
         image_button.click()
         deadline = time.time() + 10
         while time.time() < deadline:
-            for container in (frame, page):
+            for candidate_container in (page,):
                 try:
-                    locator = container.locator("input[type='file']").first
+                    locator = candidate_container.locator("input[type='file']").first
                     if locator.count() > 0:
                         return locator
                 except Exception:
@@ -277,47 +380,3 @@ class NaverBlogPublisher:
             except Exception:
                 continue
         return False
-
-    @staticmethod
-    def _body_editor(frame):
-        editor = frame.locator("[contenteditable='true']").last
-        return editor
-
-    def _insert_html(self, frame, html: str) -> None:
-        frame.evaluate(
-            """
-            ([html]) => {
-                const selection = window.getSelection();
-                if (!selection || selection.rangeCount === 0) {
-                    return;
-                }
-
-                const range = selection.getRangeAt(0);
-                range.deleteContents();
-                const wrapper = document.createElement('div');
-                wrapper.innerHTML = html;
-                const fragment = document.createDocumentFragment();
-                let node = null;
-                let lastNode = null;
-                while ((node = wrapper.firstChild)) {
-                    lastNode = fragment.appendChild(node);
-                }
-                range.insertNode(fragment);
-                if (lastNode) {
-                    range.setStartAfter(lastNode);
-                    range.collapse(true);
-                    selection.removeAllRanges();
-                    selection.addRange(range);
-                }
-            }
-            """,
-            [html],
-        )
-
-    @staticmethod
-    def _escape_html(text: str) -> str:
-        return (
-            text.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-        )

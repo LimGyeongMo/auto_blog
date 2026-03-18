@@ -3,6 +3,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
+import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from generator import BlogPostGenerator
@@ -15,6 +18,40 @@ from openai_text import (
 )
 from parser import ImageFolderParser
 from seo import BasicTextComposer, SEOKeywordGenerator
+
+
+class ConsoleSpinner:
+    def __init__(self, message: str) -> None:
+        self._message = message
+        self._stop_event = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    def __enter__(self) -> "ConsoleSpinner":
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        self._stop_event.set()
+        if self._thread is not None:
+            self._thread.join()
+        sys.stdout.write("\r" + (" " * 120) + "\r")
+        sys.stdout.flush()
+
+    def _run(self) -> None:
+        frames = ["|", "/", "-", "\\"]
+        index = 0
+        while not self._stop_event.is_set():
+            sys.stdout.write(f"\r{frames[index % len(frames)]} {self._message}")
+            sys.stdout.flush()
+            index += 1
+            time.sleep(0.12)
+
+
+@contextmanager
+def spinner(message: str):
+    with ConsoleSpinner(message):
+        yield
 
 
 def load_dotenv(dotenv_path: Path) -> None:
@@ -69,6 +106,11 @@ def build_parser() -> argparse.ArgumentParser:
         default="blog_post.md",
         help="Output markdown file path.",
     )
+    generate_parser.add_argument(
+        "--concept",
+        default="",
+        help="Optional writing concept or tone to guide generation.",
+    )
 
     publish_parser = subparsers.add_parser(
         "publish", help="Generate a post and populate the Naver blog editor."
@@ -101,6 +143,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Naver blog editor URL.",
     )
     publish_parser.add_argument(
+        "--blog-id",
+        default=os.getenv("NAVER_BLOG_ID", ""),
+        help="Naver blog ID used for the editor URL.",
+    )
+    publish_parser.add_argument(
         "--user-data-dir",
         default=".playwright-profile",
         help="Browser profile directory used to keep the login session.",
@@ -127,6 +174,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=120,
         help="Seconds to wait for the editor to become ready.",
     )
+    publish_parser.add_argument(
+        "--concept",
+        default="",
+        help="Optional writing concept or tone to guide generation.",
+    )
 
     return parser
 
@@ -137,22 +189,37 @@ def handle_generate(
     openai_model: str,
     image_detail: str,
     output: str,
+    concept: str,
 ) -> None:
     folder_path = Path(folder).expanduser().resolve()
+    print(f"[1/3] 이미지 폴더 확인: {folder_path}")
     parser = ImageFolderParser()
     document = parser.parse_folder(folder_path)
-    generator = build_generator(mode=mode, openai_model=openai_model, image_detail=image_detail)
+    print(f"[2/3] 글 생성 준비: 이미지 {len(document.ordered_images)}장, 섹션 {len(document.sections)}개")
+    generator = build_generator(
+        mode=mode,
+        openai_model=openai_model,
+        image_detail=image_detail,
+        concept=concept,
+    )
 
-    markdown = generator.generate(document)
+    with spinner("블로그 글 생성 중..."):
+        markdown = generator.generate(document)
     output_path = Path(output).expanduser()
     if not output_path.is_absolute():
         output_path = Path.cwd() / output_path
     output_path.write_text(markdown, encoding="utf-8")
 
+    print("[3/3] Markdown 저장 완료")
     print(f"Markdown saved to: {output_path}")
 
 
-def build_generator(mode: str, openai_model: str, image_detail: str) -> BlogPostGenerator:
+def build_generator(
+    mode: str,
+    openai_model: str,
+    image_detail: str,
+    concept: str,
+) -> BlogPostGenerator:
     keyword_generator = SEOKeywordGenerator()
     text_composer = build_text_composer(
         mode=mode,
@@ -160,6 +227,7 @@ def build_generator(mode: str, openai_model: str, image_detail: str) -> BlogPost
         config=OpenAIComposerConfig(
             model=openai_model,
             image_detail=image_detail,
+            concept=concept.strip(),
         ),
     )
     return BlogPostGenerator(
@@ -174,28 +242,42 @@ def handle_publish(
     openai_model: str,
     image_detail: str,
     publish_url: str,
+    blog_id: str,
     user_data_dir: str,
     headless: bool,
     publish_now: bool,
     upload_wait: float,
     timeout_seconds: int,
+    concept: str,
 ) -> None:
     folder_path = Path(folder).expanduser().resolve()
+    print(f"[1/4] 이미지 폴더 확인: {folder_path}")
     parser = ImageFolderParser()
     document = parser.parse_folder(folder_path)
-    generator = build_generator(mode=mode, openai_model=openai_model, image_detail=image_detail)
-    rendered = generator.render(document)
+    print(f"[2/4] 글 생성 준비: 이미지 {len(document.ordered_images)}장, 섹션 {len(document.sections)}개")
+    generator = build_generator(
+        mode=mode,
+        openai_model=openai_model,
+        image_detail=image_detail,
+        concept=concept,
+    )
+    with spinner("OpenAI로 글 생성 중..."):
+        rendered = generator.render(document)
+    print("[3/4] 글 생성 완료, 네이버 에디터 연결 시작")
     publisher = NaverBlogPublisher(
         NaverPublishConfig(
             user_data_dir=Path(user_data_dir).expanduser().resolve(),
             publish_url=publish_url,
+            blog_id=blog_id.strip(),
             headless=headless,
             publish=publish_now,
             upload_wait_seconds=upload_wait,
             wait_timeout_ms=timeout_seconds * 1000,
         )
     )
-    publisher.publish_post(rendered)
+    with spinner("네이버 블로그 에디터 작업 중..."):
+        publisher.publish_post(rendered)
+    print("[4/4] 네이버 블로그 입력 완료")
 
 
 def main() -> None:
@@ -210,6 +292,7 @@ def main() -> None:
                 openai_model=args.openai_model,
                 image_detail=args.image_detail,
                 output=args.output,
+                concept=args.concept,
             )
         if args.command == "publish":
             handle_publish(
@@ -218,11 +301,13 @@ def main() -> None:
                 openai_model=args.openai_model,
                 image_detail=args.image_detail,
                 publish_url=args.publish_url,
+                blog_id=args.blog_id,
                 user_data_dir=args.user_data_dir,
                 headless=args.headless,
                 publish_now=args.publish_now,
                 upload_wait=args.upload_wait,
                 timeout_seconds=args.timeout_seconds,
+                concept=args.concept,
             )
     except OpenAIUnavailableError as exc:
         print(f"OpenAI mode is unavailable: {exc}", file=sys.stderr)
