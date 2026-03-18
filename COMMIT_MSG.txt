@@ -1,1 +1,0 @@
-[GMLIM_260318] Update : 컨셉 입력, blogId, publish 흐름, README 반영
