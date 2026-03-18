@@ -36,10 +36,114 @@ $blogPrompt = [string]::Concat(
     [char]0x29
 )
 $blogId = Read-Host $blogPrompt
+$regionPrompt = [string]::Concat(
+    [char]0xC9C0,[char]0xC5ED,[char]0xBA85,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0x20,
+    [char]0x28,[char]0xC608,[char]0x3A,[char]0x20,
+    [char]0xC131,[char]0xC218,[char]0x2C,[char]0x20,
+    [char]0xAC15,[char]0xB0A8,[char]0x2C,[char]0x20,
+    [char]0xC81C,[char]0xC8FC,[char]0x29
+)
+$seoRegion = Read-Host $regionPrompt
+$topicPrompt = [string]::Concat(
+    [char]0xC8FC,[char]0xC81C,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0x20,
+    [char]0x28,[char]0xC608,[char]0x3A,[char]0x20,
+    [char]0xCE74,[char]0xD398,[char]0x2C,[char]0x20,
+    [char]0xB9DB,[char]0xC9D1,[char]0x2C,[char]0x20,
+    [char]0xC219,[char]0xC18C,[char]0x29
+)
+$seoTopic = Read-Host $topicPrompt
+$primaryPrompt = [string]::Concat(
+    [char]0xBA54,[char]0xC778,[char]0x20,
+    [char]0xD0A4,[char]0xC6CC,[char]0xB4DC,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0x20,
+    [char]0x28,[char]0xBE44,[char]0xC6CC,[char]0xB450,[char]0xBA74,[char]0x20,
+    [char]0xC790,[char]0xB3D9,[char]0x20,[char]0xC0DD,[char]0xC131,[char]0x29
+)
+$seoPrimary = Read-Host $primaryPrompt
+$secondaryPrompt = [string]::Concat(
+    [char]0xC11C,[char]0xBE0C,[char]0x20,
+    [char]0xD0A4,[char]0xC6CC,[char]0xB4DC,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0x20,
+    [char]0x28,[char]0xC27C,[char]0xD45C,[char]0xB85C,[char]0x20,
+    [char]0xAD6C,[char]0xBD84,[char]0x2C,[char]0x20,
+    [char]0xBE44,[char]0xC6CC,[char]0xB450,[char]0xBA74,[char]0x20,
+    [char]0xC790,[char]0xB3D9,[char]0x20,[char]0xC0DD,[char]0xC131,[char]0x29
+)
+$seoSecondary = Read-Host $secondaryPrompt
+$tonePrompt = [string]::Concat(
+    [char]0xB9D0,[char]0xD22C,[char]0x20,
+    [char]0xC608,[char]0xC2DC,[char]0x20,
+    [char]0xC785,[char]0xB825,[char]0x20,
+    [char]0x28,[char]0xBE44,[char]0xC6CC,[char]0xB450,[char]0xBA74,[char]0x20,
+    [char]0xC0AC,[char]0xC6A9,[char]0xC790,[char]0x20,
+    [char]0xAE30,[char]0xBCF8,[char]0x20,
+    [char]0xB9D0,[char]0xD22C,[char]0x20,
+    [char]0xC0AC,[char]0xC6A9,[char]0x29
+)
+$toneSample = Read-Host $tonePrompt
+$sentencePrompt = [string]::Concat(
+    [char]0xBB38,[char]0xC7A5,[char]0x20,
+    [char]0xAE38,[char]0xC774,[char]0x20,
+    [char]0x28,[char]0x73,[char]0x68,[char]0x6F,[char]0x72,[char]0x74,[char]0x2F,
+    [char]0x6D,[char]0x65,[char]0x64,[char]0x69,[char]0x75,[char]0x6D,[char]0x2F,
+    [char]0x6C,[char]0x6F,[char]0x6E,[char]0x67,[char]0x2C,[char]0x20,
+    [char]0xBE44,[char]0xC6CC,[char]0xB450,[char]0xBA74,[char]0x20,
+    [char]0xAE30,[char]0xBCF8,[char]0x29
+)
+$sentenceLength = Read-Host $sentencePrompt
+$emojiPrompt = [string]::Concat(
+    [char]0xC774,[char]0xBAA8,[char]0xC9C0,[char]0x20,
+    [char]0xC0AC,[char]0xC6A9,[char]0x20,
+    [char]0x28,[char]0x6E,[char]0x6F,[char]0x6E,[char]0x65,[char]0x2F,
+    [char]0x6C,[char]0x69,[char]0x67,[char]0x68,[char]0x74,[char]0x2F,
+    [char]0x61,[char]0x63,[char]0x74,[char]0x69,[char]0x76,[char]0x65,[char]0x2C,[char]0x20,
+    [char]0xBE44,[char]0xC6CC,[char]0xB450,[char]0xBA74,[char]0x20,
+    [char]0xAE30,[char]0xBCF8,[char]0x29
+)
+$emojiStyle = Read-Host $emojiPrompt
+$imagePlacementPrompt = [string]::Concat(
+    [char]0xC774,[char]0xBBF8,[char]0xC9C0,[char]0x20,
+    [char]0xC704,[char]0xCE58,[char]0x20,
+    [char]0xAE30,[char]0xBCF8,[char]0xAC12,[char]0x20,
+    [char]0x28,[char]0x62,[char]0x65,[char]0x66,[char]0x6F,[char]0x72,[char]0x65,[char]0x2F,
+    [char]0x61,[char]0x66,[char]0x74,[char]0x65,[char]0x72,[char]0x29
+)
+$imagePlacement = Read-Host $imagePlacementPrompt
+$sectionImagePrompt = [string]::Concat(
+    [char]0xC139,[char]0xC158,[char]0xBCC4,[char]0x20,
+    [char]0xC774,[char]0xBBF8,[char]0xC9C0,[char]0x20,
+    [char]0xC704,[char]0xCE58,[char]0x20,
+    [char]0xC9C8,[char]0xBB38,[char]0x20,
+    [char]0x28,[char]0xC608,[char]0x3A,[char]0x20,
+    [char]0x31,[char]0x3A,[char]0x62,[char]0x65,[char]0x66,[char]0x6F,[char]0x72,[char]0x65,
+    [char]0x2C,[char]0x32,[char]0x3A,[char]0x61,[char]0x66,[char]0x74,[char]0x65,[char]0x72,
+    [char]0x20,[char]0x2F,[char]0x20,
+    [char]0x31,[char]0xBC88,[char]0x20,[char]0xC139,[char]0xC158,[char]0xC740,[char]0x20,
+    [char]0xC774,[char]0xBBF8,[char]0xC9C0,[char]0x20,[char]0xBA3C,[char]0xC800,
+    [char]0x29
+)
+$sectionImagePlacement = Read-Host $sectionImagePrompt
 
-& python (Join-Path $scriptDir "main.py") publish `
-    --folder $folder `
-    --mode openai `
-    --concept $concept `
-    --blog-id $blogId `
-    --user-data-dir (Join-Path $scriptDir ".playwright-profile")
+$pythonArgs = @(
+    (Join-Path $scriptDir "main.py"),
+    "publish",
+    "--folder", $folder,
+    "--mode", "openai",
+    "--user-data-dir", (Join-Path $scriptDir ".playwright-profile")
+)
+
+if ($concept) { $pythonArgs += @("--concept", $concept) }
+if ($blogId) { $pythonArgs += @("--blog-id", $blogId) }
+if ($seoRegion) { $pythonArgs += @("--seo-region", $seoRegion) }
+if ($seoTopic) { $pythonArgs += @("--seo-topic", $seoTopic) }
+if ($seoPrimary) { $pythonArgs += @("--seo-primary-keyword", $seoPrimary) }
+if ($seoSecondary) { $pythonArgs += @("--seo-secondary-keywords", $seoSecondary) }
+if ($toneSample) { $pythonArgs += @("--tone-sample", $toneSample) }
+if ($sentenceLength) { $pythonArgs += @("--sentence-length", $sentenceLength) }
+if ($emojiStyle) { $pythonArgs += @("--emoji-style", $emojiStyle) }
+if ($imagePlacement) { $pythonArgs += @("--image-placement", $imagePlacement) }
+if ($sectionImagePlacement) { $pythonArgs += @("--section-image-placement", $sectionImagePlacement) }
+
+& python @pythonArgs

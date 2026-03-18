@@ -29,6 +29,10 @@ class NaverBlogPublisher:
     def __init__(self, config: NaverPublishConfig) -> None:
         self._config = config
 
+    @staticmethod
+    def _log(message: str) -> None:
+        print(f"\n{message}", flush=True)
+
     def publish_post(self, post: RenderedPost) -> None:
         try:
             from playwright.sync_api import sync_playwright
@@ -39,27 +43,27 @@ class NaverBlogPublisher:
             ) from exc
 
         self._config.user_data_dir.mkdir(parents=True, exist_ok=True)
-        print(f"프로필 경로 준비 완료: {self._config.user_data_dir}")
+        self._log(f"프로필 경로 준비 완료: {self._config.user_data_dir}")
 
         with sync_playwright() as playwright:
             browser_type = playwright.chromium
-            print("브라우저 실행 중...")
+            self._log("브라우저 실행 중...")
             context = self._launch_context(browser_type)
             try:
                 page = context.pages[0] if context.pages else context.new_page()
-                print("네이버 글쓰기 화면으로 이동 중...")
+                self._log("네이버 글쓰기 화면으로 이동 중...")
                 page.goto(self._editor_url(), wait_until="domcontentloaded")
                 try:
                     page.wait_for_load_state("networkidle", timeout=10000)
                 except Exception:
                     pass
                 page.bring_to_front()
-                print("에디터 로딩 대기 중...")
+                self._log("에디터 로딩 대기 중...")
                 self._wait_for_editor(page)
                 self._dismiss_optional_dialogs(page)
                 title_target = self._locate_title_target(page)
                 body_target = self._locate_body_target(page)
-                print("제목과 본문 입력 중...")
+                self._log("제목과 본문 입력 중...")
                 self._fill_title(title_target, post.title)
                 self._clear_body(page, body_target)
                 self._append_paragraph(page, body_target, post.keyword_line)
@@ -70,10 +74,11 @@ class NaverBlogPublisher:
                 self._append_heading(page, body_target, post.closing_heading.replace("## ", ""))
                 self._append_text_block(page, body_target, post.closing)
                 if self._config.publish:
-                    print("최종 발행 버튼 클릭 시도 중...")
+                    self._log("최종 발행 버튼 클릭 시도 중...")
                     self._publish(page)
                 else:
-                    print("초안 입력 완료. 자동화를 종료합니다.")
+                    self._log("초안 입력 완료. 브라우저를 직접 닫을 때까지 유지합니다.")
+                    self._wait_until_browser_closed(context)
             finally:
                 context.close()
 
@@ -102,7 +107,7 @@ class NaverBlogPublisher:
             except NaverPublishError:
                 if not prompted_for_login and self._looks_like_login_or_home(page):
                     prompted_for_login = True
-                    print(f"현재 페이지: {page.url}")
+                    self._log(f"현재 페이지: {page.url}")
                     input(
                         "네이버 로그인 또는 블로그 개설이 필요해 보입니다. "
                         "브라우저에서 로그인/이동을 완료한 뒤 Enter를 누르면 다시 시도합니다..."
@@ -180,13 +185,27 @@ class NaverBlogPublisher:
                 ),
                 encoding="utf-8",
             )
-            print(f"디버그 HTML 저장: {html_path}")
-            print(f"디버그 JSON 저장: {json_path}")
+            self._log(f"디버그 HTML 저장: {html_path}")
+            self._log(f"디버그 JSON 저장: {json_path}")
             return json_path
         except Exception:
             return None
 
     def _dismiss_optional_dialogs(self, page) -> None:
+        priority_candidates = [
+            "[data-name='se-popup-alert se-popup-alert-confirm'] .se-popup-button-confirm",
+            "[data-name='se-popup-alert se-popup-alert-confirm'] button:has-text('확인')",
+        ]
+        for selector in priority_candidates:
+            try:
+                locator = page.locator(selector).first
+                if locator.count() > 0 and locator.is_visible(timeout=500):
+                    locator.click(timeout=500)
+                    time.sleep(0.3)
+                    return
+            except Exception:
+                continue
+
         candidates = [
             "button:has-text('취소')",
             "button:has-text('나중에')",
@@ -215,7 +234,7 @@ class NaverBlogPublisher:
         for selector in selectors:
             try:
                 locator = page.locator(selector).first
-                if locator.is_visible(timeout=500):
+                if locator.count() > 0 and locator.is_visible(timeout=500):
                     return locator
             except Exception:
                 continue
@@ -251,7 +270,17 @@ class NaverBlogPublisher:
         for selector in selectors:
             try:
                 locator = page.locator(selector).first
-                if locator.is_visible(timeout=500):
+                if locator.count() > 0 and locator.is_visible(timeout=500):
+                    return locator
+            except Exception:
+                continue
+
+        # Some Naver states keep the editor mounted but covered by a restore popup.
+        # If the node exists in the DOM, allow later focus/click recovery to proceed.
+        for selector in selectors:
+            try:
+                locator = page.locator(selector).first
+                if locator.count() > 0:
                     return locator
             except Exception:
                 continue
@@ -278,16 +307,24 @@ class NaverBlogPublisher:
         title_target.type(title)
 
     def _clear_body(self, page, body_target) -> None:
-        body_target.click()
+        self._focus_body_target(page, body_target)
         page.keyboard.press("Control+A")
         page.keyboard.press("Delete")
 
     def _append_section(self, page, body_target, section: SectionPost) -> None:
-        print(f"섹션 입력 중: {section.heading}")
-        self._append_heading(page, body_target, section.heading.replace("## ", ""))
+        ordered_image_names = ", ".join(image.original_name for image in section.images) or "없음"
+        section_label = section.heading or "본문 섹션"
+        self._log(f"섹션 입력 중: {section_label} | 이미지 순서: {ordered_image_names}")
+        if section.heading:
+            self._append_heading(page, body_target, section.heading.replace("## ", ""))
+        if section.image_placement == "before":
+            self._upload_images(page, body_target, section.images)
+            self._append_text_block(page, body_target, section.text)
+            self._append_blank(page, body_target)
+            return
+
         self._append_text_block(page, body_target, section.text)
-        for image in section.images:
-            self._upload_image(page, body_target, image.file_path)
+        self._upload_images(page, body_target, section.images)
         self._append_blank(page, body_target)
 
     def _append_heading(self, page, body_target, heading: str) -> None:
@@ -298,20 +335,38 @@ class NaverBlogPublisher:
             self._append_paragraph(page, body_target, paragraph)
 
     def _append_paragraph(self, page, body_target, text: str) -> None:
-        body_target.click()
+        self._focus_body_target(page, body_target)
+        self._ensure_plain_text_mode(page)
+        self._reset_inline_format(page)
         page.keyboard.type(text)
         page.keyboard.press("Enter")
 
     def _append_blank(self, page, body_target) -> None:
-        body_target.click()
+        self._focus_body_target(page, body_target)
         page.keyboard.press("Enter")
 
-    def _upload_image(self, page, body_target, image_path: Path) -> None:
-        print(f"이미지 업로드 중: {image_path.name}")
+    def _upload_images(self, page, body_target, images: list) -> None:
+        if not images:
+            return
+
+        image_names = ", ".join(image.original_name for image in images)
+        upload_order = list(images)
+        upload_names = ", ".join(image.original_name for image in upload_order)
+        self._log(f"이미지 업로드 중: 화면 순서={image_names} | 실제 업로드 순서={upload_names}")
+
+        # Keep the original parsed order as-is so section images stay main -> sub.
+        for image in upload_order:
+            self._upload_single_image(page, body_target, image.file_path)
+
+    def _upload_single_image(self, page, body_target, image_path: Path) -> None:
         image_button = self._find_image_button(page, body_target)
         image_input = self._find_file_input(page, body_target, image_button)
-        image_input.set_input_files(str(image_path))
+        if image_input is not None:
+            image_input.set_input_files(str(image_path))
+        else:
+            self._upload_via_file_chooser(page, image_button, [str(image_path)])
         time.sleep(self._config.upload_wait_seconds)
+        self._close_image_type_popup(page)
 
     def _find_image_button(self, page, body_target):
         selectors = [
@@ -338,25 +393,143 @@ class NaverBlogPublisher:
     def _find_file_input(self, page, body_target, image_button):
         for candidate_container in (page,):
             try:
-                locator = candidate_container.locator("input[type='file']").first
+                locator = candidate_container.locator("input[type='file']").last
                 if locator.count() > 0:
                     return locator
             except Exception:
                 continue
 
-        image_button.click()
+        try:
+            image_button.click()
+        except Exception:
+            return None
+
         deadline = time.time() + 10
         while time.time() < deadline:
             for candidate_container in (page,):
                 try:
-                    locator = candidate_container.locator("input[type='file']").first
+                    locator = candidate_container.locator("input[type='file']").last
                     if locator.count() > 0:
                         return locator
                 except Exception:
                     continue
             time.sleep(0.5)
 
-        raise NaverPublishError("Could not find the file input for image upload.")
+        return None
+
+    def _upload_via_file_chooser(self, page, image_button, file_paths: list[str]) -> None:
+        try:
+            with page.expect_file_chooser(timeout=10000) as chooser_info:
+                image_button.click()
+            chooser = chooser_info.value
+            chooser.set_files(file_paths)
+            return
+        except Exception as exc:
+            raise NaverPublishError(
+                "Could not find the file input for image upload."
+            ) from exc
+
+    def _current_body_target(self, page, body_target):
+        selectors = [
+            ".se-component[data-a11y-title='본문'] .se-text-paragraph",
+            ".se-section-text .se-text-paragraph",
+            ".se-module-text .se-text-paragraph",
+            ".se-component[data-a11y-title='본문'] .__se-node",
+            "[contenteditable='true'][data-placeholder*='내용']",
+            "[contenteditable='true'][aria-label*='본문']",
+            "[contenteditable='true'][placeholder*='내용']",
+            "[contenteditable='true']",
+        ]
+
+        for selector in selectors:
+            try:
+                locator = page.locator(selector)
+                count = locator.count()
+            except Exception:
+                continue
+
+            for index in range(count - 1, -1, -1):
+                candidate = locator.nth(index)
+                try:
+                    if candidate.is_visible(timeout=250):
+                        return candidate
+                except Exception:
+                    continue
+
+        return body_target
+
+    def _focus_body_target(self, page, body_target) -> None:
+        self._dismiss_optional_dialogs(page)
+        self._close_image_type_popup(page)
+        active_body_target = self._current_body_target(page, body_target)
+        try:
+            active_body_target.click(timeout=3000)
+            return
+        except Exception:
+            pass
+
+        self._close_image_type_popup(page)
+        active_body_target = self._current_body_target(page, body_target)
+        active_body_target.click(force=True, timeout=3000)
+
+    @staticmethod
+    def _reset_inline_format(page) -> None:
+        shortcuts = [
+            "Control+Space",
+            "Control+\\",
+        ]
+        for shortcut in shortcuts:
+            try:
+                page.keyboard.press(shortcut)
+                time.sleep(0.05)
+            except Exception:
+                continue
+
+    def _ensure_plain_text_mode(self, page) -> None:
+        selectors = [
+            ".se-strikethrough-toolbar-button",
+            "button[data-name='strikethrough']",
+            "button[aria-label*='취소선']",
+        ]
+        for selector in selectors:
+            try:
+                locator = page.locator(selector).first
+                if locator.count() == 0:
+                    continue
+
+                pressed = (locator.get_attribute("aria-pressed") or "").lower()
+                class_name = locator.get_attribute("class") or ""
+                if pressed == "true" or "se-is-selected" in class_name or "active" in class_name:
+                    locator.click(timeout=500)
+                    time.sleep(0.1)
+                    return
+            except Exception:
+                continue
+
+    def _close_image_type_popup(self, page) -> None:
+        popup_root = "[data-name='se-popup-image-type']"
+        dismiss_selectors = [
+            f"{popup_root} button:has-text('닫기')",
+            f"{popup_root} .se-popup-close",
+            f"{popup_root} .se-popup-dim",
+            f"{popup_root} .se-popup-dim-transparent",
+        ]
+
+        for selector in dismiss_selectors:
+            try:
+                locator = page.locator(selector).first
+                if locator.count() > 0 and locator.is_visible(timeout=300):
+                    locator.click(timeout=500, force=True)
+                    time.sleep(0.2)
+                    return
+            except Exception:
+                continue
+
+        try:
+            page.keyboard.press("Escape")
+            time.sleep(0.2)
+        except Exception:
+            pass
 
     def _publish(self, page) -> None:
         selectors = [
@@ -380,3 +553,13 @@ class NaverBlogPublisher:
             except Exception:
                 continue
         return False
+
+    @staticmethod
+    def _wait_until_browser_closed(context) -> None:
+        while True:
+            try:
+                if len(context.pages) == 0:
+                    return
+                time.sleep(1)
+            except Exception:
+                return

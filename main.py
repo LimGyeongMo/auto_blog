@@ -17,7 +17,13 @@ from openai_text import (
     build_text_composer,
 )
 from parser import ImageFolderParser
-from seo import BasicTextComposer, SEOKeywordGenerator
+from seo import (
+    BasicTextComposer,
+    SEOConfig,
+    SEOKeywordGenerator,
+    StyleConfig,
+    resolve_style_config,
+)
 
 
 class ConsoleSpinner:
@@ -111,6 +117,54 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional writing concept or tone to guide generation.",
     )
+    generate_parser.add_argument(
+        "--seo-topic",
+        default="",
+        help="Optional SEO topic or subject.",
+    )
+    generate_parser.add_argument(
+        "--seo-region",
+        default="",
+        help="Optional SEO region.",
+    )
+    generate_parser.add_argument(
+        "--seo-primary-keyword",
+        default="",
+        help="Optional primary SEO keyword.",
+    )
+    generate_parser.add_argument(
+        "--seo-secondary-keywords",
+        default="",
+        help="Optional comma-separated secondary SEO keywords.",
+    )
+    generate_parser.add_argument(
+        "--tone-sample",
+        default=StyleConfig().tone_sample,
+        help="Optional sample text for writing tone.",
+    )
+    generate_parser.add_argument(
+        "--sentence-length",
+        choices=("short", "medium", "long", ""),
+        default=StyleConfig().sentence_length,
+        help="Optional preferred sentence length.",
+    )
+    generate_parser.add_argument(
+        "--emoji-style",
+        choices=("none", "light", "active", ""),
+        default=StyleConfig().emoji_style,
+        help="Optional emoji style preference.",
+    )
+    generate_parser.add_argument(
+        "--image-placement",
+        choices=("before", "after"),
+        default="after",
+        help="Default image placement inside each section.",
+    )
+    generate_parser.add_argument(
+        "--section-image-placement",
+        default="",
+        help="Optional per-section image placement like '1:before,2:after'.",
+    )
 
     publish_parser = subparsers.add_parser(
         "publish", help="Generate a post and populate the Naver blog editor."
@@ -179,6 +233,54 @@ def build_parser() -> argparse.ArgumentParser:
         default="",
         help="Optional writing concept or tone to guide generation.",
     )
+    publish_parser.add_argument(
+        "--seo-topic",
+        default="",
+        help="Optional SEO topic or subject.",
+    )
+    publish_parser.add_argument(
+        "--seo-region",
+        default="",
+        help="Optional SEO region.",
+    )
+    publish_parser.add_argument(
+        "--seo-primary-keyword",
+        default="",
+        help="Optional primary SEO keyword.",
+    )
+    publish_parser.add_argument(
+        "--seo-secondary-keywords",
+        default="",
+        help="Optional comma-separated secondary SEO keywords.",
+    )
+    publish_parser.add_argument(
+        "--tone-sample",
+        default=StyleConfig().tone_sample,
+        help="Optional sample text for writing tone.",
+    )
+    publish_parser.add_argument(
+        "--sentence-length",
+        choices=("short", "medium", "long", ""),
+        default=StyleConfig().sentence_length,
+        help="Optional preferred sentence length.",
+    )
+    publish_parser.add_argument(
+        "--emoji-style",
+        choices=("none", "light", "active", ""),
+        default=StyleConfig().emoji_style,
+        help="Optional emoji style preference.",
+    )
+    publish_parser.add_argument(
+        "--image-placement",
+        choices=("before", "after"),
+        default="after",
+        help="Default image placement inside each section.",
+    )
+    publish_parser.add_argument(
+        "--section-image-placement",
+        default="",
+        help="Optional per-section image placement like '1:before,2:after'.",
+    )
 
     return parser
 
@@ -190,6 +292,15 @@ def handle_generate(
     image_detail: str,
     output: str,
     concept: str,
+    seo_topic: str,
+    seo_region: str,
+    seo_primary_keyword: str,
+    seo_secondary_keywords: str,
+    tone_sample: str,
+    sentence_length: str,
+    emoji_style: str,
+    image_placement: str,
+    section_image_placement: str,
 ) -> None:
     folder_path = Path(folder).expanduser().resolve()
     print(f"[1/3] 이미지 폴더 확인: {folder_path}")
@@ -201,6 +312,20 @@ def handle_generate(
         openai_model=openai_model,
         image_detail=image_detail,
         concept=concept,
+        seo_config=build_seo_config(
+            topic=seo_topic,
+            region=seo_region,
+            primary_keyword=seo_primary_keyword,
+            secondary_keywords=seo_secondary_keywords,
+        ),
+        style_config=build_style_config(
+            concept=concept,
+            tone_sample=tone_sample,
+            sentence_length=sentence_length,
+            emoji_style=emoji_style,
+        ),
+        image_placement=image_placement,
+        section_image_placements=parse_section_image_placements(section_image_placement),
     )
 
     with spinner("블로그 글 생성 중..."):
@@ -219,20 +344,28 @@ def build_generator(
     openai_model: str,
     image_detail: str,
     concept: str,
+    seo_config: SEOConfig,
+    style_config: StyleConfig,
+    image_placement: str,
+    section_image_placements: dict[int, str],
 ) -> BlogPostGenerator:
-    keyword_generator = SEOKeywordGenerator()
+    keyword_generator = SEOKeywordGenerator(config=seo_config)
     text_composer = build_text_composer(
         mode=mode,
-        fallback=BasicTextComposer(),
+        fallback=BasicTextComposer(style_config=style_config),
         config=OpenAIComposerConfig(
             model=openai_model,
             image_detail=image_detail,
             concept=concept.strip(),
+            seo=seo_config,
+            style=style_config,
         ),
     )
     return BlogPostGenerator(
         keyword_generator=keyword_generator,
         text_composer=text_composer,
+        default_image_placement=image_placement,
+        section_image_placements=section_image_placements,
     )
 
 
@@ -249,17 +382,44 @@ def handle_publish(
     upload_wait: float,
     timeout_seconds: int,
     concept: str,
+    seo_topic: str,
+    seo_region: str,
+    seo_primary_keyword: str,
+    seo_secondary_keywords: str,
+    tone_sample: str,
+    sentence_length: str,
+    emoji_style: str,
+    image_placement: str,
+    section_image_placement: str,
 ) -> None:
     folder_path = Path(folder).expanduser().resolve()
     print(f"[1/4] 이미지 폴더 확인: {folder_path}")
     parser = ImageFolderParser()
     document = parser.parse_folder(folder_path)
     print(f"[2/4] 글 생성 준비: 이미지 {len(document.ordered_images)}장, 섹션 {len(document.sections)}개")
+    print(
+        "이미지 전체 순서: "
+        + ", ".join(image.original_name for image in document.ordered_images)
+    )
     generator = build_generator(
         mode=mode,
         openai_model=openai_model,
         image_detail=image_detail,
         concept=concept,
+        seo_config=build_seo_config(
+            topic=seo_topic,
+            region=seo_region,
+            primary_keyword=seo_primary_keyword,
+            secondary_keywords=seo_secondary_keywords,
+        ),
+        style_config=build_style_config(
+            concept=concept,
+            tone_sample=tone_sample,
+            sentence_length=sentence_length,
+            emoji_style=emoji_style,
+        ),
+        image_placement=image_placement,
+        section_image_placements=parse_section_image_placements(section_image_placement),
     )
     with spinner("OpenAI로 글 생성 중..."):
         rendered = generator.render(document)
@@ -280,6 +440,51 @@ def handle_publish(
     print("[4/4] 네이버 블로그 입력 완료")
 
 
+def build_seo_config(
+    topic: str,
+    region: str,
+    primary_keyword: str,
+    secondary_keywords: str,
+) -> SEOConfig:
+    return SEOConfig(
+        topic=topic.strip(),
+        region=region.strip(),
+        primary_keyword=primary_keyword.strip(),
+        secondary_keywords=[
+            keyword.strip() for keyword in secondary_keywords.split(",") if keyword.strip()
+        ],
+    )
+
+
+def build_style_config(
+    concept: str,
+    tone_sample: str,
+    sentence_length: str,
+    emoji_style: str,
+) -> StyleConfig:
+    return resolve_style_config(
+        concept=concept,
+        tone_sample=tone_sample,
+        sentence_length=sentence_length,
+        emoji_style=emoji_style,
+    )
+
+
+def parse_section_image_placements(raw_value: str) -> dict[int, str]:
+    placements: dict[int, str] = {}
+    for item in raw_value.split(","):
+        item = item.strip()
+        if not item or ":" not in item:
+            continue
+        section_number, placement = item.split(":", 1)
+        section_number = section_number.strip()
+        placement = placement.strip().lower()
+        if not section_number.isdigit() or placement not in {"before", "after"}:
+            continue
+        placements[int(section_number)] = placement
+    return placements
+
+
 def main() -> None:
     load_dotenv(Path(".env").resolve())
     args = build_parser().parse_args()
@@ -293,6 +498,15 @@ def main() -> None:
                 image_detail=args.image_detail,
                 output=args.output,
                 concept=args.concept,
+                seo_topic=args.seo_topic,
+                seo_region=args.seo_region,
+                seo_primary_keyword=args.seo_primary_keyword,
+                seo_secondary_keywords=args.seo_secondary_keywords,
+                tone_sample=args.tone_sample,
+                sentence_length=args.sentence_length,
+                emoji_style=args.emoji_style,
+                image_placement=args.image_placement,
+                section_image_placement=args.section_image_placement,
             )
         if args.command == "publish":
             handle_publish(
@@ -308,6 +522,15 @@ def main() -> None:
                 upload_wait=args.upload_wait,
                 timeout_seconds=args.timeout_seconds,
                 concept=args.concept,
+                seo_topic=args.seo_topic,
+                seo_region=args.seo_region,
+                seo_primary_keyword=args.seo_primary_keyword,
+                seo_secondary_keywords=args.seo_secondary_keywords,
+                tone_sample=args.tone_sample,
+                sentence_length=args.sentence_length,
+                emoji_style=args.emoji_style,
+                image_placement=args.image_placement,
+                section_image_placement=args.section_image_placement,
             )
     except OpenAIUnavailableError as exc:
         print(f"OpenAI mode is unavailable: {exc}", file=sys.stderr)

@@ -93,4 +93,7 @@ class ImageFolderParser:
             else:
                 section.sub_images.append(image)
 
+        for section in section_map.values():
+            section.sub_images.sort(key=lambda image: image.sub_number or 0)
+
         return [section_map[number] for number in sorted(section_map)]

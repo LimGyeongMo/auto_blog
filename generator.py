@@ -11,6 +11,7 @@ class SectionPost:
     heading: str
     text: str
     images: list[ImageFile]
+    image_placement: str = "after"
 
 
 @dataclass(frozen=True)
@@ -29,9 +30,13 @@ class BlogPostGenerator:
         self,
         keyword_generator: SEOKeywordGenerator,
         text_composer: TextComposer,
+        default_image_placement: str = "after",
+        section_image_placements: dict[int, str] | None = None,
     ) -> None:
         self.keyword_generator = keyword_generator
         self.text_composer = text_composer
+        self.default_image_placement = default_image_placement
+        self.section_image_placements = section_image_placements or {}
 
     def generate(self, document: BlogDocument) -> str:
         return self.render(document).markdown
@@ -83,23 +88,42 @@ class BlogPostGenerator:
         document: BlogDocument,
         keywords: SEOKeywords,
     ) -> SectionPost:
+        images = self._ordered_section_images(section)
+        return SectionPost(
+            heading="",
+            text=self.text_composer.compose_section_text(section, document, keywords),
+            images=images,
+            image_placement=self.section_image_placements.get(
+                section.main_number,
+                self.default_image_placement,
+            ),
+        )
+
+    @staticmethod
+    def _ordered_section_images(section: Section) -> list[ImageFile]:
         images: list[ImageFile] = []
         if section.main_image is not None:
             images.append(section.main_image)
-        images.extend(section.sub_images)
-        return SectionPost(
-            heading=f"## {section.main_number}",
-            text=self.text_composer.compose_section_text(section, document, keywords),
-            images=images,
-        )
+        images.extend(sorted(section.sub_images, key=lambda image: image.sub_number or 0))
+        return images
 
     def _render_section(self, section_post: SectionPost) -> list[str]:
-        lines = ["", section_post.heading, section_post.text, ""]
+        lines = [""]
+        if section_post.heading:
+            lines.append(section_post.heading)
 
-        for image in section_post.images:
-            lines.append(self._render_image(image))
+        if section_post.image_placement == "before":
+            lines.extend(self._render_images(section_post.images))
+            lines.append(section_post.text)
+            lines.append("")
+            return lines
 
+        lines.extend([section_post.text, ""])
+        lines.extend(self._render_images(section_post.images))
         return lines
+
+    def _render_images(self, images: list[ImageFile]) -> list[str]:
+        return [self._render_image(image) for image in images]
 
     @staticmethod
     def _render_image(image: ImageFile) -> str:
