@@ -37,6 +37,27 @@ python main.py generate --folder ./images --mode template
 OpenAI 모드까지 사용하려면 `.env`의 `OPENAI_API_KEY`를 실제 값으로 채운 뒤 실행하면 됩니다.
 네이버 자동 입력까지 사용하려면 `NAVER_BLOG_ID`도 함께 준비하면 편합니다.
 
+## 새 기기에서 처음 시작하기
+
+아무 설정도 없는 새 PC나 새 작업 환경에서는 아래 순서대로 진행하면 됩니다.
+
+1. Git을 설치하고 저장소를 클론합니다.
+2. Python 3.11 이상을 설치합니다.
+3. 프로젝트 루트에서 `pip install -r requirements.txt`를 실행합니다.
+4. `.env.example`를 복사해 `.env`를 만들고 `OPENAI_API_KEY`를 입력합니다.
+5. 이미지 파일을 `images` 폴더에 넣습니다.
+6. Markdown 초안만 필요하면 `python main.py generate --folder ./images --mode auto`를 실행합니다.
+7. 네이버 블로그 자동 입력까지 필요하면 `python main.py publish --folder ./images --mode openai --blog-id <blog_id>`를 실행합니다.
+8. `publish`를 처음 실행한 기기에서는 네이버 로그인이 필요할 수 있습니다.
+9. 로그인 이후에는 브라우저 세션이 `.playwright-profile` 폴더에 저장되어 다음 실행부터 재사용됩니다.
+
+처음부터 네이버 자동 입력까지 바로 써야 한다면 아래 항목도 함께 확인합니다.
+
+- Chrome이 설치되어 있으면 기본적으로 그 브라우저를 우선 사용합니다.
+- 브라우저 실행이 되지 않으면 `python -m playwright install chromium`로 Playwright 브라우저를 한 번 설치합니다.
+- 새 기기에서는 기존 `.playwright-profile`이 없어도 괜찮습니다. 실행 중 필요할 때 자동으로 생성됩니다.
+- 단, 로그인 상태까지 자동 복원되지는 않으므로 새 기기에서는 보통 한 번 직접 로그인해야 합니다.
+
 ## 프로젝트 목적
 
 - 번호 규칙이 있는 이미지 파일을 순서대로 정리합니다.
@@ -108,6 +129,7 @@ OpenAI 모드 사용 시 추가 필요:
 네이버 업로드 자동화 사용 시 추가 필요:
 
 - Python 패키지 `playwright` (`requirements.txt`에 포함)
+- 설치된 Chrome 브라우저 권장, 또는 `python -m playwright install chromium`
 - 크롬 로그인 세션을 저장할 브라우저 프로필 디렉터리
 - 네이버 블로그 글쓰기 화면에 직접 로그인할 수 있는 환경
 
@@ -117,6 +139,13 @@ OpenAI 모드 사용 시 추가 필요:
 2. `.env`에 API 키를 넣습니다.
 3. `.env`는 `.gitignore`에 포함되어 Git에 올라가지 않습니다.
 4. 실제 이미지 파일(`.jpg`, `.png` 등)도 `.gitignore`에 포함되어 Git에 올라가지 않습니다.
+
+`.playwright-profile` 관련 메모:
+
+- 이 폴더는 `publish` 실행 시 브라우저 프로필 저장용으로 사용됩니다.
+- 폴더가 없어도 실행 중 자동으로 새로 만들어질 수 있습니다.
+- 새 기기에서는 로그인 세션이 없으므로 네이버 로그인을 한 번 다시 해야 할 수 있습니다.
+- 로그인 쿠키와 세션 정보가 남을 수 있으니 저장소에 커밋하거나 외부에 공유하지 않는 편이 안전합니다.
 
 예시:
 
