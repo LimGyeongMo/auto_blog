@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import socket
+import subprocess
 import time
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from dataclasses import dataclass
@@ -45,42 +47,29 @@ class NaverBlogPublisher:
         self._config.user_data_dir.mkdir(parents=True, exist_ok=True)
         self._log(f"프로필 경로 준비 완료: {self._config.user_data_dir}")
 
-        with sync_playwright() as playwright:
-            browser_type = playwright.chromium
-            self._log("브라우저 실행 중...")
-            context = self._launch_context(browser_type)
-            try:
-                page = context.pages[0] if context.pages else context.new_page()
-                self._log("네이버 글쓰기 화면으로 이동 중...")
-                page.goto(self._editor_url(), wait_until="domcontentloaded")
+        if self._config.publish:
+            with sync_playwright() as playwright:
+                browser_type = playwright.chromium
+                self._log("브라우저 실행 중...")
+                context = self._launch_context(browser_type)
                 try:
-                    page.wait_for_load_state("networkidle", timeout=10000)
-                except Exception:
-                    pass
-                page.bring_to_front()
-                self._log("에디터 로딩 대기 중...")
-                self._wait_for_editor(page)
-                self._dismiss_optional_dialogs(page)
-                title_target = self._locate_title_target(page)
-                body_target = self._locate_body_target(page)
-                self._log("제목과 본문 입력 중...")
-                self._fill_title(title_target, post.title)
-                self._clear_body(page, body_target)
-                self._append_paragraph(page, body_target, post.keyword_line)
-                self._append_blank(page, body_target)
-                self._append_text_block(page, body_target, post.intro)
-                for section in post.sections:
-                    self._append_section(page, body_target, section)
-                self._append_heading(page, body_target, post.closing_heading.replace("## ", ""))
-                self._append_text_block(page, body_target, post.closing)
-                if self._config.publish:
+                    page = context.pages[0] if context.pages else context.new_page()
+                    self._fill_post(page, post)
                     self._log("최종 발행 버튼 클릭 시도 중...")
                     self._publish(page)
-                else:
-                    self._log("초안 입력 완료. 브라우저를 직접 닫을 때까지 유지합니다.")
-                    self._wait_until_browser_closed(context)
-            finally:
-                context.close()
+                finally:
+                    context.close()
+            return
+
+        playwright = sync_playwright().start()
+        try:
+            self._log("브라우저 실행 중...")
+            browser, context = self._launch_detached_browser(playwright)
+            page = context.pages[0] if context.pages else context.new_page()
+            self._fill_post(page, post)
+            self._log("초안 입력 완료. 브라우저는 열린 상태로 유지하고 Python 프로세스를 종료합니다.")
+        finally:
+            playwright.stop()
 
     def _launch_context(self, browser_type):
         launch_kwargs = {
@@ -94,6 +83,88 @@ class NaverBlogPublisher:
             )
         except Exception:
             return browser_type.launch_persistent_context(**launch_kwargs)
+
+    def _launch_detached_browser(self, playwright):
+        chrome_path = self._resolve_chrome_path()
+        debug_port = self._find_free_port()
+        command = [
+            str(chrome_path),
+            f"--remote-debugging-port={debug_port}",
+            f"--user-data-dir={self._config.user_data_dir}",
+            "--new-window",
+            self._editor_url(),
+        ]
+        creationflags = 0
+        if hasattr(subprocess, "DETACHED_PROCESS"):
+            creationflags |= subprocess.DETACHED_PROCESS
+        if hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
+            creationflags |= subprocess.CREATE_NEW_PROCESS_GROUP
+
+        subprocess.Popen(
+            command,
+            creationflags=creationflags,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+        browser = self._connect_over_cdp(playwright, debug_port)
+        contexts = browser.contexts
+        if not contexts:
+            raise NaverPublishError("Detached Chrome started, but no browser context was available.")
+        return browser, contexts[0]
+
+    def _fill_post(self, page, post: RenderedPost) -> None:
+        self._log("네이버 글쓰기 화면으로 이동 중...")
+        page.goto(self._editor_url(), wait_until="domcontentloaded")
+        try:
+            page.wait_for_load_state("networkidle", timeout=10000)
+        except Exception:
+            pass
+        page.bring_to_front()
+        self._log("에디터 로딩 대기 중...")
+        self._wait_for_editor(page)
+        self._dismiss_optional_dialogs(page)
+        title_target = self._locate_title_target(page)
+        body_target = self._locate_body_target(page)
+        self._log("제목과 본문 입력 중...")
+        self._fill_title(title_target, post.title)
+        self._clear_body(page, body_target)
+        self._append_paragraph(page, body_target, post.keyword_line)
+        self._append_blank(page, body_target)
+        self._append_text_block(page, body_target, post.intro)
+        for section in post.sections:
+            self._append_section(page, body_target, section)
+        self._append_heading(page, body_target, post.closing_heading.replace("## ", ""))
+        self._append_text_block(page, body_target, post.closing)
+
+    @staticmethod
+    def _find_free_port() -> int:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.bind(("127.0.0.1", 0))
+            return int(sock.getsockname()[1])
+
+    def _connect_over_cdp(self, playwright, port: int):
+        endpoint = f"http://127.0.0.1:{port}"
+        deadline = time.time() + 20
+        last_error: Exception | None = None
+        while time.time() < deadline:
+            try:
+                return playwright.chromium.connect_over_cdp(endpoint)
+            except Exception as exc:
+                last_error = exc
+                time.sleep(0.5)
+        raise NaverPublishError(f"Could not connect to detached Chrome over CDP: {last_error}")
+
+    def _resolve_chrome_path(self) -> Path:
+        candidates = [
+            Path("C:/Program Files/Google/Chrome/Application/chrome.exe"),
+            Path("C:/Program Files (x86)/Google/Chrome/Application/chrome.exe"),
+            Path.home() / "AppData/Local/Google/Chrome/Application/chrome.exe",
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return candidate
+        raise NaverPublishError("Could not find Chrome executable for detached browser mode.")
 
     def _wait_for_editor(self, page):
         deadline = time.time() + (self._config.wait_timeout_ms / 1000)

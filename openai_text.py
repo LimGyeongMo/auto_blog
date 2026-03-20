@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from io import BytesIO
 from base64 import b64encode
 from dataclasses import dataclass
 from mimetypes import guess_type
@@ -215,16 +216,12 @@ class OpenAITextComposer(TextComposer):
             "당신은 네이버 블로그 전문 에디터입니다. "
             "아래 정보를 바탕으로 SEO를 고려한 자연스러운 한국어 블로그 문구를 작성하세요. "
             "결과는 반드시 JSON만 반환하세요. 형식은 "
-            '{"title":"", "intro":"", "sections":{"1":"", "2":""}, "closing":""} 입니다. '
+            '{"title":"", "intro":"", "closing":""} 입니다. '
             "조건: 제목/도입부/본문/마무리에 주요 키워드와 서브 키워드를 자연스럽게 포함하고, "
             f"과도한 반복은 피하며, {self._intro_length_instruction()} "
             f"{self._closing_length_instruction()} "
-            "본문 각 섹션 설명은 메인 번호당 반드시 내용이 있는 본문으로 작성하세요. "
-            f"{self._section_length_instruction()} "
-            "장면 설명만 하지 말고 분위기, 포인트, 짧은 감상이나 팁까지 함께 넣으세요. "
             "사용자가 제공한 컨셉이 있으면 톤과 표현, 분위기에 반드시 반영하세요. "
-            "이미지 순서는 절대 바꾸지 말고, 섹션 데이터의 이미지 순서를 기준으로만 설명을 작성하세요. "
-            "이미지 번호를 기계적으로 나열하지 말고, 이미지 순서가 의미하는 방문 흐름이나 시선 흐름을 자연스럽게 풀어 쓰세요.\n\n"
+            "제목과 도입부, 마무리는 전체 흐름을 요약하되 과장된 표현은 줄이고 자연스럽게 작성하세요.\n\n"
             f"폴더명: {document.folder.name}\n"
             f"작성 컨셉: {self._config.concept or '기본'}\n"
             f"말투 예시: {self._config.style.tone_sample}\n"
@@ -242,13 +239,7 @@ class OpenAITextComposer(TextComposer):
         payload = [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}]
         response_text = self._request_text(payload)
         parsed = self._parse_json_object(response_text)
-
-        section_texts_raw = parsed.get("sections", {})
-        section_texts = {
-            int(section_number): self._normalize_generated_text(str(text))
-            for section_number, text in section_texts_raw.items()
-            if self._normalize_generated_text(str(text))
-        }
+        section_texts = self._generate_section_texts(document, keywords, section_insights)
 
         return GeneratedPostCopy(
             title=str(parsed.get("title", "")).strip() or f"{keywords.primary} 이미지 정리",
@@ -258,6 +249,61 @@ class OpenAITextComposer(TextComposer):
             closing=self._normalize_generated_text(str(parsed.get("closing", "")))
             or "도움이 되셨다면 공감과 댓글로 의견 남겨주세요.",
         )
+
+    def _generate_section_texts(
+        self,
+        document: BlogDocument,
+        keywords: SEOKeywords,
+        section_insights: list[SectionInsight],
+    ) -> dict[int, str]:
+        section_texts: dict[int, str] = {}
+
+        for index, insight in enumerate(section_insights):
+            previous_summary = (
+                section_insights[index - 1].summary if index > 0 else "이전 구간 없음"
+            )
+            next_summary = (
+                section_insights[index + 1].summary
+                if index + 1 < len(section_insights)
+                else "다음 구간 없음"
+            )
+            prompt = (
+                "당신은 네이버 블로그 전문 에디터입니다. "
+                "한 개 섹션 본문만 작성하세요. 결과는 반드시 JSON만 반환하세요. 형식은 "
+                '{"section_number":1,"text":""} 입니다. '
+                "중요: 현재 섹션에 해당하는 이미지와 흐름만 써야 하며, 다른 섹션의 장소나 음식이나 장면을 섞으면 안 됩니다. "
+                "이미지 순서는 절대 바꾸지 말고, 현재 섹션의 이미지 이름 순서만 참고하세요. "
+                "숫자 번호를 본문에 기계적으로 반복하지 말고, 실제 후기처럼 자연스럽게 풀어 쓰세요. "
+                "장면 설명만 하지 말고 분위기, 포인트, 짧은 감상이나 팁까지 함께 넣으세요. "
+                f"{self._section_length_instruction()} "
+                "현재 섹션에 메인 이미지가 1장뿐이면 그 한 장면에 과하게 많은 장소를 덧붙이지 말고, 보이는 범위 안에서만 구체적으로 쓰세요.\n\n"
+                f"폴더명: {document.folder.name}\n"
+                f"작성 컨셉: {self._config.concept or '기본'}\n"
+                f"말투 예시: {self._config.style.tone_sample}\n"
+                f"문장 길이 선호: {self._config.style.sentence_length}\n"
+                f"이모지 사용 선호: {self._config.style.emoji_style}\n"
+                f"SEO 지역명: {self._config.seo.region or '없음'}\n"
+                f"SEO 주제: {self._config.seo.topic or '없음'}\n"
+                f"사용자 메인 키워드: {self._config.seo.primary_keyword or '없음'}\n"
+                f"사용자 서브 키워드: {', '.join(self._config.seo.secondary_keywords) or '없음'}\n"
+                f"주요 키워드: {keywords.primary}\n"
+                f"서브 키워드: {', '.join(keywords.secondary)}\n"
+                f"이전 섹션 요약: {previous_summary}\n"
+                f"현재 섹션 번호: {insight.section_number}\n"
+                f"현재 섹션 요약: {insight.summary}\n"
+                f"현재 섹션 키워드: {', '.join(insight.scene_keywords) or '없음'}\n"
+                f"현재 섹션 이미지 수: {self._section_image_count(document, insight.section_number)}\n"
+                f"현재 섹션 이미지 이름 순서: {', '.join(self._section_image_names(document, insight.section_number))}\n"
+                f"다음 섹션 요약: {next_summary}"
+            )
+            payload = [{"role": "user", "content": [{"type": "input_text", "text": prompt}]}]
+            response_text = self._request_text(payload)
+            parsed = self._parse_json_object(response_text)
+            text = self._normalize_generated_text(str(parsed.get("text", "")))
+            if text:
+                section_texts[insight.section_number] = text
+
+        return section_texts
 
     def _default_section_text(self, section: Section, keywords: SEOKeywords) -> str:
         image_count = (1 if section.main_image else 0) + len(section.sub_images)
@@ -390,9 +436,47 @@ class OpenAITextComposer(TextComposer):
 
     @staticmethod
     def _to_data_url(image_path: Path) -> str:
-        mime_type = guess_type(image_path.name)[0] or "application/octet-stream"
-        encoded = b64encode(image_path.read_bytes()).decode("ascii")
-        return f"data:{mime_type};base64,{encoded}"
+        suffix = image_path.suffix.lower()
+        if suffix in {".jpg", ".jpeg", ".png", ".gif", ".webp"}:
+            mime_type = guess_type(image_path.name)[0] or "application/octet-stream"
+            encoded = b64encode(image_path.read_bytes()).decode("ascii")
+            return f"data:{mime_type};base64,{encoded}"
+
+        if suffix == ".heic":
+            return OpenAITextComposer._heic_to_jpeg_data_url(image_path)
+
+        raise OpenAIRequestError(
+            f"Unsupported image format for OpenAI upload: {image_path.name}. "
+            "Use jpg, png, gif, webp, or install HEIC conversion support."
+        )
+
+    @staticmethod
+    def _heic_to_jpeg_data_url(image_path: Path) -> str:
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise OpenAIRequestError(
+                "HEIC image detected but Pillow is not installed. "
+                "Install dependencies again and retry."
+            ) from exc
+
+        try:
+            import pillow_heif
+        except ImportError as exc:
+            raise OpenAIRequestError(
+                "HEIC image detected but 'pillow-heif' is not installed. "
+                "Run 'pip install -r requirements.txt' and retry, or convert HEIC files to JPG/PNG."
+            ) from exc
+
+        pillow_heif.register_heif_opener()
+
+        with Image.open(image_path) as image:
+            converted = image.convert("RGB")
+            buffer = BytesIO()
+            converted.save(buffer, format="JPEG", quality=95)
+
+        encoded = b64encode(buffer.getvalue()).decode("ascii")
+        return f"data:image/jpeg;base64,{encoded}"
 
     @staticmethod
     def _describe_openai_error(exc: Exception) -> str:

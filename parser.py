@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Iterable
 
 
-IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
+IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic"}
 FILENAME_PATTERN = re.compile(r"^(?P<main>\d+)(?:-(?P<sub>\d+))?$")
 
 
@@ -44,13 +44,36 @@ class ImageFolderParser:
         if not folder.is_dir():
             raise NotADirectoryError(f"Not a directory: {folder}")
 
-        images = self._collect_images(folder.iterdir())
+        resolved_folder = self._resolve_image_folder(folder)
+        images = self._collect_images(resolved_folder.iterdir())
         if not images:
             raise ValueError(f"No supported image files found in: {folder}")
 
         ordered_images = sorted(images, key=self._sort_key)
         sections = self._build_sections(ordered_images)
-        return BlogDocument(folder=folder, sections=sections, ordered_images=ordered_images)
+        return BlogDocument(folder=resolved_folder, sections=sections, ordered_images=ordered_images)
+
+    def _resolve_image_folder(self, folder: Path) -> Path:
+        if self._collect_images(folder.iterdir()):
+            return folder
+
+        child_directories = [
+            path
+            for path in folder.iterdir()
+            if path.is_dir() and not path.name.startswith(".") and path.name != "__MACOSX"
+        ]
+
+        candidates: list[tuple[int, Path]] = []
+        for child in child_directories:
+            image_count = len(self._collect_images(child.iterdir()))
+            if image_count:
+                candidates.append((image_count, child))
+
+        if not candidates:
+            return folder
+
+        candidates.sort(key=lambda item: (-item[0], item[1].name))
+        return candidates[0][1]
 
     def _collect_images(self, paths: Iterable[Path]) -> list[ImageFile]:
         images: list[ImageFile] = []
