@@ -243,7 +243,8 @@ start_blogging.bat
 - CLI 기본 생성 모드: `auto`
 - 출력 파일: `blog_post.md`
 
-단축 실행 스크립트 `start_blogging`과 `start_bloging.bat`은 현재 항상 `publish --mode openai`로 실행합니다.
+단축 실행 스크립트 `start_blogging`, `start_blogging.bat`, `start_bloging`, `start_bloging.bat`은 현재 항상 `publish --mode openai`로 실행합니다.
+Windows의 PowerShell 진입 흐름과 macOS/Linux의 `bash` 진입 흐름은 동일한 질문 순서와 옵션 전달 방식으로 맞춰져 있습니다.
 실행 시 아래 순서로 진행합니다.
 
 1. 블로그 컨셉 입력

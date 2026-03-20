@@ -9,6 +9,58 @@ else
   FOLDER="$SCRIPT_DIR/images"
 fi
 
-read -r -p "Enter blog concept (example: cozy review, expert review, friendly guide). Leave blank for default: " CONCEPT
+read -r -p "블로그 컨셉을 입력하세요 (예: 감성 후기, 전문 리뷰, 친근한 설명). 비워두면 기본값으로 진행합니다: " CONCEPT
+read -r -p "네이버 블로그 아이디를 입력하세요 (예: myblogid): " BLOG_ID
+read -r -p "지역명을 입력하세요 (예: 성수, 강남, 제주): " SEO_REGION
+read -r -p "주제를 입력하세요 (예: 카페, 맛집, 숙소): " SEO_TOPIC
+read -r -p "메인 키워드를 입력하세요 (비워두면 자동 생성): " SEO_PRIMARY
+read -r -p "서브 키워드를 입력하세요 (쉼표로 구분, 비워두면 자동 생성): " SEO_SECONDARY
+read -r -p "말투 예시를 입력하세요 (비워두면 사용자 기본 말투 사용): " TONE_SAMPLE
+read -r -p "문장 길이를 입력하세요 (short/medium/long, 비워두면 기본값): " SENTENCE_LENGTH
+read -r -p "이모지 사용 방식을 입력하세요 (none/light/active, 비워두면 기본값): " EMOJI_STYLE
+read -r -p "이미지 기본 위치를 입력하세요 (before/after): " IMAGE_PLACEMENT
+read -r -p "섹션별 이미지 위치를 입력하세요 (예: 1:before,2:after): " SECTION_IMAGE_PLACEMENT
 
-python "$SCRIPT_DIR/main.py" publish --folder "$FOLDER" --mode openai --concept "$CONCEPT" --user-data-dir "$SCRIPT_DIR/.playwright-profile"
+PYTHON_ARGS=(
+  "$SCRIPT_DIR/main.py"
+  publish
+  --folder "$FOLDER"
+  --mode openai
+  --user-data-dir "$SCRIPT_DIR/.playwright-profile"
+)
+
+if [[ -n "$CONCEPT" ]]; then
+  PYTHON_ARGS+=(--concept "$CONCEPT")
+fi
+if [[ -n "$BLOG_ID" ]]; then
+  PYTHON_ARGS+=(--blog-id "$BLOG_ID")
+fi
+if [[ -n "$SEO_REGION" ]]; then
+  PYTHON_ARGS+=(--seo-region "$SEO_REGION")
+fi
+if [[ -n "$SEO_TOPIC" ]]; then
+  PYTHON_ARGS+=(--seo-topic "$SEO_TOPIC")
+fi
+if [[ -n "$SEO_PRIMARY" ]]; then
+  PYTHON_ARGS+=(--seo-primary-keyword "$SEO_PRIMARY")
+fi
+if [[ -n "$SEO_SECONDARY" ]]; then
+  PYTHON_ARGS+=(--seo-secondary-keywords "$SEO_SECONDARY")
+fi
+if [[ -n "$TONE_SAMPLE" ]]; then
+  PYTHON_ARGS+=(--tone-sample "$TONE_SAMPLE")
+fi
+if [[ -n "$SENTENCE_LENGTH" ]]; then
+  PYTHON_ARGS+=(--sentence-length "$SENTENCE_LENGTH")
+fi
+if [[ -n "$EMOJI_STYLE" ]]; then
+  PYTHON_ARGS+=(--emoji-style "$EMOJI_STYLE")
+fi
+if [[ -n "$IMAGE_PLACEMENT" ]]; then
+  PYTHON_ARGS+=(--image-placement "$IMAGE_PLACEMENT")
+fi
+if [[ -n "$SECTION_IMAGE_PLACEMENT" ]]; then
+  PYTHON_ARGS+=(--section-image-placement "$SECTION_IMAGE_PLACEMENT")
+fi
+
+python "${PYTHON_ARGS[@]}"
